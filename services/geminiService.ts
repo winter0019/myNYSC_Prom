@@ -1,7 +1,8 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import type { Feedback } from '../types';
 
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY as string });
+// Fix: Adhere to API key guidelines by using process.env.API_KEY.
+const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
 /**
  * Converts a File object to a GoogleGenAI.Part object for multi-modal prompting.
@@ -66,10 +67,13 @@ export async function getTextFromFile(file: File): Promise<string> {
       const filePart = await fileToGenerativePart(file);
       const response = await ai.models.generateContent({
         model: 'gemini-2.5-flash',
-        contents: [
-          { text: "Analyze the provided document. Identify and extract only the main body of the text. Exclude any prefatory content such as title pages, tables of contents, introductions, prefaces, or forewords. Return only the core content of the document. If there's no main body, return an empty string." },
-          filePart
-        ],
+        // Fix: Correctly structure multi-part content as a single Content object.
+        contents: {
+          parts: [
+            { text: "Analyze the provided document. Identify and extract only the main body of the text. Exclude any prefatory content such as title pages, tables of contents, introductions, prefaces, or forewords. Return only the core content of the document. If there's no main body, return an empty string." },
+            filePart
+          ]
+        },
       });
       const extractedText = response.text.trim();
       if (!extractedText) {
