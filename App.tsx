@@ -12,6 +12,19 @@ import { GradeLevelSelector } from './components/GradeLevelSelector';
 import { QuestionSelection } from './components/QuestionSelection';
 import { HistoryDisplay } from './components/HistoryDisplay';
 
+const ApiKeyMissingBanner = () => (
+    <div className="w-full p-4 my-4 text-sm text-yellow-800 rounded-lg bg-yellow-100 dark:bg-slate-900 dark:text-yellow-300 border border-yellow-200 dark:border-yellow-800" role="alert">
+        <h2 className="font-bold mb-2">Configuration Error: API Key is Missing</h2>
+        <p>
+            The application cannot connect to the AI service because the API key has not been configured.
+        </p>
+        <p className="mt-2">
+            <strong>To fix this:</strong> Go to your project's settings on Render, navigate to the "Environment" section, and add a new environment variable with the key <code className="font-mono bg-yellow-200 dark:bg-slate-700 p-1 rounded">GEMINI_API_KEY</code> and your Gemini API key as the value. The deployment will automatically restart.
+        </p>
+    </div>
+);
+
+
 export default function App() {
   const [appState, setAppState] = useState<AppState>(AppState.AWAITING_UPLOAD);
   const [gradeLevel, setGradeLevel] = useState<string>('');
@@ -24,6 +37,9 @@ export default function App() {
   const [fileName, setFileName] = useState<string | null>(null);
   const [isDarkMode, setIsDarkMode] = useState(false);
   const [history, setHistory] = useState<HistoryEntry[]>([]);
+  
+  // Check if the API key is present. Vite replaces `process.env.API_KEY` with the actual value at build time.
+  const isApiKeyMissing = !process.env.API_KEY;
 
   useEffect(() => {
     const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
@@ -152,6 +168,10 @@ export default function App() {
   }
   
   const renderContent = () => {
+    if (isApiKeyMissing) {
+        return <ApiKeyMissingBanner />;
+    }
+      
     switch (appState) {
       case AppState.AWAITING_UPLOAD:
         return (
@@ -198,7 +218,7 @@ export default function App() {
       <Header isDarkMode={isDarkMode} onToggleTheme={handleToggleTheme} />
       <div className="w-full max-w-3xl mx-auto space-y-6 p-4">
         <main className="flex flex-col items-center">
-            {error && (
+            {error && !isApiKeyMissing && (
             <div className="w-full p-4 mb-4 text-sm text-red-800 rounded-lg bg-red-100 dark:bg-slate-900 dark:text-red-300 border border-red-200 dark:border-red-800" role="alert">
                 <span className="font-medium">Error:</span> {error}
             </div>
