@@ -1,0 +1,5 @@
+{
+  "name": "AI Essay Grader",
+  "description": "An application that generates essay questions from uploaded documents, allows users to answer them, and provides AI-powered feedback by comparing the answer to the source material and suggesting improvements.",
+  "requestFramePermissions": []
+}
