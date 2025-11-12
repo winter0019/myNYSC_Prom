@@ -24,9 +24,22 @@ const ApiKeyMissingBanner = () => (
     </div>
 );
 
+const ApiKeyInvalidBanner = () => (
+    <div className="w-full p-4 my-4 text-sm text-red-800 rounded-lg bg-red-100 dark:bg-slate-900 dark:text-red-300 border border-red-200 dark:border-red-800" role="alert">
+        <h2 className="font-bold mb-2">Configuration Error: API Key is Invalid</h2>
+        <p>
+            The application failed to connect to the AI service. The provided API key is invalid, has been leaked, or lacks the necessary permissions.
+        </p>
+        <p className="mt-2">
+            <strong>To fix this:</strong> Please generate a new key from Google AI Studio. Then, go to your project's settings on Render, navigate to the "Environment" section, and update the environment variable with the key <code className="font-mono bg-red-200 dark:bg-slate-700 p-1 rounded">GEMINI_API_KEY</code> to your new API key value. The deployment will automatically restart.
+        </p>
+    </div>
+);
+
 
 export default function App() {
   const [appState, setAppState] = useState<AppState>(AppState.AWAITING_UPLOAD);
+  const [apiKeyStatus, setApiKeyStatus] = useState<'VALID' | 'MISSING' | 'INVALID'>('VALID');
   const [gradeLevel, setGradeLevel] = useState<string>('');
   const [documentText, setDocumentText] = useState<string | null>(null);
   const [essayQuestions, setEssayQuestions] = useState<Question[]>([]);
@@ -37,11 +50,11 @@ export default function App() {
   const [fileName, setFileName] = useState<string | null>(null);
   const [isDarkMode, setIsDarkMode] = useState(false);
   const [history, setHistory] = useState<HistoryEntry[]>([]);
-  
-  // Check if the API key is present. Vite replaces `process.env.API_KEY` with the actual value at build time.
-  const isApiKeyMissing = !process.env.API_KEY;
 
   useEffect(() => {
+    if (!process.env.API_KEY) {
+        setApiKeyStatus('MISSING');
+    }
     const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
     const savedTheme = localStorage.getItem('theme');
     if (savedTheme === 'dark' || (!savedTheme && prefersDark)) {
@@ -102,7 +115,13 @@ export default function App() {
       setEssayQuestions(selectedQuestions.map(q => ({ text: q })));
       setAppState(AppState.AWAITING_QUESTION_SELECTION);
     } catch (err: any) {
-      handleError(err.message || 'An unknown error occurred while processing the file.', false);
+      if (err instanceof Error && err.message.startsWith("API_KEY_INVALID")) {
+          setApiKeyStatus('INVALID');
+          setError(null);
+          setAppState(AppState.AWAITING_UPLOAD);
+      } else {
+          handleError(err.message || 'An unknown error occurred while processing the file.', false);
+      }
     }
   }, [gradeLevel]);
 
@@ -141,8 +160,14 @@ export default function App() {
 
       setAppState(AppState.SHOWING_FEEDBACK);
     } catch (err: any) {
-      handleError(err.message || 'An unexpected error occurred.', true);
-      setAppState(AppState.AWAITING_ANSWER);
+        if (err instanceof Error && err.message.startsWith("API_KEY_INVALID")) {
+            setApiKeyStatus('INVALID');
+            setError(null);
+            setAppState(AppState.AWAITING_ANSWER);
+        } else {
+            handleError(err.message || 'An unexpected error occurred.', true);
+            setAppState(AppState.AWAITING_ANSWER);
+        }
     }
   }, [documentText, essayQuestions, selectedQuestionIndex]);
 
@@ -168,8 +193,11 @@ export default function App() {
   }
   
   const renderContent = () => {
-    if (isApiKeyMissing) {
+    if (apiKeyStatus === 'MISSING') {
         return <ApiKeyMissingBanner />;
+    }
+    if (apiKeyStatus === 'INVALID') {
+        return <ApiKeyInvalidBanner />;
     }
       
     switch (appState) {
@@ -218,7 +246,7 @@ export default function App() {
       <Header isDarkMode={isDarkMode} onToggleTheme={handleToggleTheme} />
       <div className="w-full max-w-3xl mx-auto space-y-6 p-4">
         <main className="flex flex-col items-center">
-            {error && !isApiKeyMissing && (
+            {error && apiKeyStatus === 'VALID' && (
             <div className="w-full p-4 mb-4 text-sm text-red-800 rounded-lg bg-red-100 dark:bg-slate-900 dark:text-red-300 border border-red-200 dark:border-red-800" role="alert">
                 <span className="font-medium">Error:</span> {error}
             </div>

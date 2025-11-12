@@ -66,7 +66,7 @@ export async function getTextFromFile(file: File): Promise<string> {
     try {
       const filePart = await fileToGenerativePart(file);
       const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
+        model: 'gemini-2.5-pro',
         // Fix: Correctly structure multi-part content as a single Content object.
         contents: {
           parts: [
@@ -82,8 +82,14 @@ export async function getTextFromFile(file: File): Promise<string> {
       return extractedText;
     } catch (error) {
         console.error("Error processing file with Gemini:", error);
-        if (error instanceof Error && error.message.includes("Could not extract any text")) {
-          throw error; // Re-throw our specific error
+        if (error instanceof Error) {
+            const lowerCaseMessage = error.message.toLowerCase();
+            if (lowerCaseMessage.includes("api key") || lowerCaseMessage.includes("permission_denied") || lowerCaseMessage.includes("permission denied")) {
+                throw new Error(`API_KEY_INVALID: ${error.message}`);
+            }
+            if (error.message.includes("Could not extract any text")) {
+              throw error; // Re-throw our specific error
+            }
         }
         throw new Error(`Failed to extract text from ${name}. The AI model may be busy or the file format is too complex. Please try again later.`);
     }
@@ -148,6 +154,12 @@ export async function generateEssayQuestions(documentText: string, gradeLevel: s
     return parsed.questions;
   } catch (error) {
     console.error("Error generating essay questions:", error);
+    if (error instanceof Error) {
+        const lowerCaseMessage = error.message.toLowerCase();
+        if (lowerCaseMessage.includes("api key") || lowerCaseMessage.includes("permission_denied") || lowerCaseMessage.includes("permission denied")) {
+            throw new Error(`API_KEY_INVALID: ${error.message}`);
+        }
+    }
     throw new Error("Failed to generate essay questions. The AI model may be temporarily unavailable.");
   }
 }
@@ -224,6 +236,12 @@ export async function evaluateAnswer(documentText: string, question: string, use
 
   } catch (error) {
     console.error("Error evaluating answer:", error);
+    if (error instanceof Error) {
+        const lowerCaseMessage = error.message.toLowerCase();
+        if (lowerCaseMessage.includes("api key") || lowerCaseMessage.includes("permission_denied") || lowerCaseMessage.includes("permission denied")) {
+            throw new Error(`API_KEY_INVALID: ${error.message}`);
+        }
+    }
     throw new Error("Failed to evaluate the answer. Please try submitting again.");
   }
 }
