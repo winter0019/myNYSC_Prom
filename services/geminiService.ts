@@ -1,5 +1,6 @@
 import { GoogleGenAI, Type } from "@google/genai";
-import type { Feedback } from '../types';
+import type { Feedback, GroundingSource } from '../types';
+import { DocumentType } from '../types';
 
 // Fix: Adhere to API key guidelines by using process.env.API_KEY.
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
@@ -99,6 +100,90 @@ export async function getTextFromFile(file: File): Promise<string> {
   throw new Error(`Unsupported file type: ${type}. Please upload a text, image, or PDF file.`);
 }
 
+export async function classifyDocument(documentText: string): Promise<DocumentType> {
+  try {
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.5-flash',
+      contents: `Analyze the following text and determine if it is primarily study material containing information and answers, or if it is a question paper/exam sheet containing only questions.
+
+      Respond with only one of the following two words: "STUDY_MATERIAL" or "QUESTION_PAPER".
+
+      TEXT:
+      ---
+      ${documentText.substring(0, 4000)}
+      ---
+      `,
+    });
+
+    const result = response.text.trim().toUpperCase();
+    if (result === 'QUESTION_PAPER') {
+      return DocumentType.QUESTION_PAPER;
+    }
+    return DocumentType.STUDY_MATERIAL;
+
+  } catch (error) {
+    console.error("Error classifying document:", error);
+    // Default to STUDY_MATERIAL to maintain original behavior on failure
+    return DocumentType.STUDY_MATERIAL;
+  }
+}
+
+export async function extractQuestionsFromPaper(documentText: string): Promise<string[]> {
+  if (!documentText || documentText.trim().length === 0) {
+    throw new Error("The document appears to be empty. No questions could be extracted.");
+  }
+  try {
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.5-flash',
+      contents: `Based on the provided exam paper, extract up to seven distinct questions.
+      
+        Return only the questions, without any numbering or introductory text. If a question has sub-parts (e.g., a, b, c), combine them into a single coherent question.
+
+        DOCUMENT CONTEXT:
+        ---
+        ${documentText.substring(0, 8000)}
+        ---
+      `,
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            questions: {
+              type: Type.ARRAY,
+              description: "An array of up to seven distinct exam questions extracted from the document.",
+              items: { type: Type.STRING }
+            }
+          },
+          required: ["questions"]
+        }
+      }
+    });
+
+    let jsonText = response.text.trim();
+    if (jsonText.startsWith('```json')) {
+      jsonText = jsonText.substring(7, jsonText.length - 3).trim();
+    } else if (jsonText.startsWith('```')) {
+      jsonText = jsonText.substring(3, jsonText.length - 3).trim();
+    }
+
+    const parsed = JSON.parse(jsonText) as { questions: string[] };
+    if (!parsed.questions || parsed.questions.length === 0) {
+        throw new Error("The AI failed to extract any questions from the document.");
+    }
+    return parsed.questions;
+  } catch (error) {
+    console.error("Error extracting questions:", error);
+    if (error instanceof Error) {
+        const lowerCaseMessage = error.message.toLowerCase();
+        if (lowerCaseMessage.includes("api key") || lowerCaseMessage.includes("permission_denied") || lowerCaseMessage.includes("permission denied")) {
+            throw new Error(`API_KEY_INVALID: ${error.message}`);
+        }
+    }
+    throw new Error("Failed to extract questions from the exam paper.");
+  }
+}
+
 
 export async function generateEssayQuestions(documentText: string, gradeLevel: string): Promise<string[]> {
   if (!documentText || documentText.trim().length === 0) {
@@ -164,7 +249,7 @@ export async function generateEssayQuestions(documentText: string, gradeLevel: s
   }
 }
 
-export async function evaluateAnswer(documentText: string, question: string, userAnswer: string): Promise<Feedback> {
+async function evaluateWithSource(documentText: string, question: string, userAnswer: string): Promise<Feedback> {
   try {
     const response = await ai.models.generateContent({
       model: 'gemini-2.5-flash',
@@ -244,4 +329,90 @@ export async function evaluateAnswer(documentText: string, question: string, use
     }
     throw new Error("Failed to evaluate the answer. Please try submitting again.");
   }
+}
+
+async function evaluateWithGrounding(question: string, userAnswer: string): Promise<Feedback> {
+  try {
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.5-pro',
+      contents: `You are an expert academic evaluator. Your task is to analyze a user's answer to a specific question based on your general knowledge and information from the web.
+        
+        **Question:**
+        ${question}
+        
+        **User's Answer:**
+        ---
+        ${userAnswer}
+        ---
+        
+        **Your Task:**
+        Provide a structured evaluation in JSON format. The JSON object must have exactly five keys:
+        1. "confidence": A number between 0 and 100 representing how factually correct and complete the user's answer is.
+        2. "assessment": A very brief, one-sentence summary explaining the confidence score.
+        3. "comparison": A concise paragraph analyzing the factual accuracy of the user's answer. Highlight what they got right and what they might have missed or stated incorrectly.
+        4. "suggestion1": A short and brief, exemplary answer to the question.
+        5. "suggestion2": A second, distinct, short and brief exemplary answer, approaching it from a slightly different angle if possible.
+        
+        Ensure your output is a single, valid JSON object and nothing else.
+      `,
+      config: {
+        tools: [{googleSearch: {}}],
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            confidence: { type: Type.NUMBER },
+            assessment: { type: Type.STRING },
+            comparison: { type: Type.STRING },
+            suggestion1: { type: Type.STRING },
+            suggestion2: { type: Type.STRING }
+          },
+          required: ["confidence", "assessment", "comparison", "suggestion1", "suggestion2"]
+        }
+      }
+    });
+
+    let jsonText = response.text.trim();
+    if (jsonText.startsWith('```json')) {
+      jsonText = jsonText.substring(7, jsonText.length - 3).trim();
+    } else if (jsonText.startsWith('```')) {
+      jsonText = jsonText.substring(3, jsonText.length - 3).trim();
+    }
+
+    const parsedFeedback = JSON.parse(jsonText) as Omit<Feedback, 'sources'>;
+
+    const sources: GroundingSource[] = response.candidates?.[0]?.groundingMetadata?.groundingChunks
+      ?.map((chunk: any) => ({
+        uri: chunk.web?.uri || '',
+        title: chunk.web?.title || 'Untitled Source',
+      }))
+      .filter((source: GroundingSource) => source.uri) || [];
+      
+    const uniqueSources = Array.from(new Map(sources.map(item => [item.uri, item])).values());
+
+    return { ...parsedFeedback, sources: uniqueSources };
+
+  } catch (error) {
+    console.error("Error evaluating answer with grounding:", error);
+    if (error instanceof Error) {
+        const lowerCaseMessage = error.message.toLowerCase();
+        if (lowerCaseMessage.includes("api key") || lowerCaseMessage.includes("permission_denied") || lowerCaseMessage.includes("permission denied")) {
+            throw new Error(`API_KEY_INVALID: ${error.message}`);
+        }
+    }
+    throw new Error("Failed to evaluate the answer using web search. Please try submitting again.");
+  }
+}
+
+export async function evaluateAnswer(
+    documentText: string,
+    question: string,
+    userAnswer: string,
+    docType: DocumentType
+): Promise<Feedback> {
+    if (docType === DocumentType.STUDY_MATERIAL) {
+        return evaluateWithSource(documentText, question, userAnswer);
+    } else {
+        return evaluateWithGrounding(question, userAnswer);
+    }
 }

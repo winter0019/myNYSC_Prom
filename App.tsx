@@ -1,7 +1,7 @@
 import React, { useState, useCallback, useEffect } from 'react';
-import { AppState } from './types';
+import { AppState, DocumentType } from './types';
 import type { Feedback, Question, HistoryEntry } from './types';
-import { getTextFromFile, generateEssayQuestions, evaluateAnswer } from './services/geminiService';
+import { getTextFromFile, generateEssayQuestions, evaluateAnswer, classifyDocument, extractQuestionsFromPaper } from './services/geminiService';
 import { Header } from './components/Header';
 import { FileUpload } from './components/FileUpload';
 import { Loader } from './components/Loader';
@@ -42,6 +42,7 @@ export default function App() {
   const [apiKeyStatus, setApiKeyStatus] = useState<'VALID' | 'MISSING' | 'INVALID'>('VALID');
   const [gradeLevel, setGradeLevel] = useState<string>('');
   const [documentText, setDocumentText] = useState<string | null>(null);
+  const [documentType, setDocumentType] = useState<DocumentType | null>(null);
   const [essayQuestions, setEssayQuestions] = useState<Question[]>([]);
   const [selectedQuestionIndex, setSelectedQuestionIndex] = useState<number | null>(null);
   const [userAnswer, setUserAnswer] = useState<string>('');
@@ -105,12 +106,21 @@ export default function App() {
       const text = await getTextFromFile(file);
       setDocumentText(text);
 
+      setAppState(AppState.CLASSIFYING_DOCUMENT);
+      const docType = await classifyDocument(text);
+      setDocumentType(docType);
+
       setAppState(AppState.GENERATING_QUESTIONS);
-      const questionPool = await generateEssayQuestions(text, gradeLevel);
       
-      // Randomly shuffle the pool and select 3 questions to display
+      let questionPool: string[];
+      if (docType === DocumentType.QUESTION_PAPER) {
+          questionPool = await extractQuestionsFromPaper(text);
+      } else {
+          questionPool = await generateEssayQuestions(text, gradeLevel);
+      }
+      
       const shuffledQuestions = [...questionPool].sort(() => 0.5 - Math.random());
-      const selectedQuestions = shuffledQuestions.slice(0, 3);
+      const selectedQuestions = shuffledQuestions.slice(0, Math.min(3, shuffledQuestions.length));
       
       setEssayQuestions(selectedQuestions.map(q => ({ text: q })));
       setAppState(AppState.AWAITING_QUESTION_SELECTION);
@@ -131,12 +141,12 @@ export default function App() {
   };
 
   const handleAnswerSubmit = useCallback(async (answer: string) => {
-    if (!documentText || selectedQuestionIndex === null) return;
+    if (!documentText || selectedQuestionIndex === null || documentType === null) return;
     setError(null);
     setUserAnswer(answer);
     setAppState(AppState.EVALUATING);
     try {
-      const result = await evaluateAnswer(documentText, essayQuestions[selectedQuestionIndex].text, answer);
+      const result = await evaluateAnswer(documentText, essayQuestions[selectedQuestionIndex].text, answer, documentType);
 
       const newHistoryEntry: HistoryEntry = {
           question: essayQuestions[selectedQuestionIndex].text,
@@ -169,12 +179,13 @@ export default function App() {
             setAppState(AppState.AWAITING_ANSWER);
         }
     }
-  }, [documentText, essayQuestions, selectedQuestionIndex]);
+  }, [documentText, essayQuestions, selectedQuestionIndex, documentType]);
 
   const handleStartOver = () => {
     setAppState(AppState.AWAITING_UPLOAD);
     setGradeLevel('');
     setDocumentText(null);
+    setDocumentType(null);
     setEssayQuestions([]);
     setSelectedQuestionIndex(null);
     setUserAnswer('');
@@ -215,8 +226,10 @@ export default function App() {
         );
       case AppState.PROCESSING_FILE:
         return <Loader text={`Processing ${fileName}...`} />;
+      case AppState.CLASSIFYING_DOCUMENT:
+        return <Loader text="Analyzing document type..." />;
       case AppState.GENERATING_QUESTIONS:
-        return <Loader text="Generating exam questions..." />;
+        return <Loader text={documentType === DocumentType.QUESTION_PAPER ? "Extracting questions..." : "Generating exam questions..."} />;
       case AppState.AWAITING_QUESTION_SELECTION:
         return <QuestionSelection questions={essayQuestions} onSelectQuestion={handleQuestionSelect} />;
       case AppState.AWAITING_ANSWER:
@@ -235,7 +248,7 @@ export default function App() {
           </div>
         );
       case AppState.SHOWING_FEEDBACK:
-        return feedback ? <FeedbackDisplay feedback={feedback} onStartOver={handleStartOver} onAnswerAnother={handleAnswerAnother} /> : null;
+        return feedback ? <FeedbackDisplay feedback={feedback} onStartOver={handleStartOver} onAnswerAnother={handleAnswerAnother} documentType={documentType} /> : null;
       default:
         return null;
     }

@@ -1,11 +1,13 @@
 import React from 'react';
 import type { Feedback } from '../types';
-import { DocumentComparisonIcon, LightBulbIcon } from './IconComponents';
+import { DocumentComparisonIcon, LightBulbIcon, LinkIcon } from './IconComponents';
+import { DocumentType } from '../types';
 
 interface FeedbackDisplayProps {
   feedback: Feedback;
   onStartOver: () => void;
   onAnswerAnother: () => void;
+  documentType: DocumentType | null;
 }
 
 const FeedbackCard: React.FC<{ title: string; icon: React.ReactNode; children: React.ReactNode; className?: string }> = ({ title, icon, children, className = '' }) => (
@@ -85,8 +87,9 @@ const ConfidenceMeter: React.FC<{ score: number; meterColor: string; textColor: 
 };
 
 
-export const FeedbackDisplay: React.FC<FeedbackDisplayProps> = ({ feedback, onStartOver, onAnswerAnother }) => {
+export const FeedbackDisplay: React.FC<FeedbackDisplayProps> = ({ feedback, onStartOver, onAnswerAnother, documentType }) => {
   const { background, assessmentText, meter, scoreText } = getConfidenceColors(feedback.confidence);
+  const analysisTitle = documentType === DocumentType.QUESTION_PAPER ? "Factual Analysis" : "Comparison Analysis";
 
   return (
     <div className="w-full space-y-8 animate-fade-in">
@@ -96,9 +99,23 @@ export const FeedbackDisplay: React.FC<FeedbackDisplayProps> = ({ feedback, onSt
         <p className={`mt-6 text-xl md:text-2xl font-medium max-w-2xl ${assessmentText}`}>{feedback.assessment}</p>
       </div>
 
-      <FeedbackCard title="Comparison Analysis" icon={<DocumentComparisonIcon className="w-6 h-6" />}>
+      <FeedbackCard title={analysisTitle} icon={<DocumentComparisonIcon className="w-6 h-6" />}>
         <p>{feedback.comparison}</p>
       </FeedbackCard>
+
+      {feedback.sources && feedback.sources.length > 0 && (
+          <FeedbackCard title="Sources" icon={<LinkIcon className="w-6 h-6" />}>
+              <ul className="list-disc pl-5 space-y-2">
+                  {feedback.sources.map((source, index) => (
+                      <li key={index}>
+                          <a href={source.uri} target="_blank" rel="noopener noreferrer" className="text-primary-600 hover:text-primary-800 dark:text-primary-400 dark:hover:text-primary-200 transition-colors break-all">
+                              {source.title}
+                          </a>
+                      </li>
+                  ))}
+              </ul>
+          </FeedbackCard>
+      )}
       
       <FeedbackCard title="Suggested Answer #1" icon={<LightBulbIcon className="w-6 h-6" />}>
         <p>{feedback.suggestion1}</p>
