@@ -357,18 +357,6 @@ async function evaluateWithGrounding(question: string, userAnswer: string): Prom
       `,
       config: {
         tools: [{googleSearch: {}}],
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            confidence: { type: Type.NUMBER },
-            assessment: { type: Type.STRING },
-            comparison: { type: Type.STRING },
-            suggestion1: { type: Type.STRING },
-            suggestion2: { type: Type.STRING }
-          },
-          required: ["confidence", "assessment", "comparison", "suggestion1", "suggestion2"]
-        }
       }
     });
 
