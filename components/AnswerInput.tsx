@@ -21,7 +21,8 @@ export const AnswerInput: React.FC<AnswerInputProps> = ({ onSubmit, disabled }) 
       <textarea
         id="answer-textarea"
         value={answer}
-        onChange={(e) => setAnswer(e.target.value)}
+        // Fix: Cast e.target to any to access the value property to avoid missing property errors.
+        onChange={(e) => setAnswer((e.target as any).value)}
         placeholder="Write your answer here..."
         className="w-full h-64 p-4 text-light-text bg-background border border-gray-300 rounded-lg shadow-sm focus:ring-primary-500 focus:border-primary-500 dark:bg-slate-800 dark:border-slate-600 dark:placeholder-gray-400 dark:text-dark-text dark:focus:ring-primary-500 dark:focus:border-primary-500 transition"
         disabled={disabled}

@@ -1,3 +1,4 @@
+/// <reference lib="dom" />
 import React, { useCallback, useState, useRef } from 'react';
 import { UploadIcon, CheckCircleIcon } from './IconComponents';
 
@@ -34,22 +35,27 @@ export const FileUpload: React.FC<FileUploadProps> = ({ onFileSelect, disabled }
   const onDrop = (e: React.DragEvent<HTMLLabelElement>) => {
     e.preventDefault();
     setIsDragging(false);
-    if (!disabled && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-      handleFile(e.dataTransfer.files[0]);
-      e.dataTransfer.clearData();
+    // Fix: Access files from dataTransfer using type assertion to handle missing property errors.
+    const dataTransfer = e.dataTransfer as any;
+    if (!disabled && dataTransfer.files && dataTransfer.files.length > 0) {
+      handleFile(dataTransfer.files[0]);
+      dataTransfer.clearData();
     }
   };
 
   const onChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files.length > 0) {
-      handleFile(e.target.files[0]);
+    // Fix: Use type assertion on target to access the files property.
+    const target = e.target as any;
+    if (target.files && target.files.length > 0) {
+      handleFile(target.files[0]);
     }
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLLabelElement>) => {
     if (e.key === 'Enter' || e.key === ' ') {
       e.preventDefault();
-      inputRef.current?.click();
+      // Fix: Use type assertion to call the click method which may not be recognized on HTMLInputElement.
+      (inputRef.current as any)?.click();
     }
   };
 

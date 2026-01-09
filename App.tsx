@@ -1,3 +1,4 @@
+/// <reference lib="dom" />
 import React, { useState, useCallback, useEffect } from 'react';
 import { AppState, DocumentType } from './types';
 import type { Feedback, Question, HistoryEntry } from './types';
@@ -13,29 +14,18 @@ import { QuestionSelection } from './components/QuestionSelection';
 import { HistoryDisplay } from './components/HistoryDisplay';
 
 const ApiKeyMissingBanner = () => (
-    <div className="w-full p-4 my-4 text-sm text-yellow-800 rounded-lg bg-yellow-100 dark:bg-slate-900 dark:text-yellow-300 border border-yellow-200 dark:border-yellow-800" role="alert">
-        <h2 className="font-bold mb-2">Configuration Error: API Key is Missing</h2>
-        <p>
-            The application cannot connect to the AI service because the API key has not been configured.
-        </p>
-        <p className="mt-2">
-            <strong>To fix this:</strong> Go to your project's settings on Render, navigate to the "Environment" section, and add a new environment variable with the key <code className="font-mono bg-yellow-200 dark:bg-slate-700 p-1 rounded">GEMINI_API_KEY</code> and your Gemini API key as the value. The deployment will automatically restart.
-        </p>
+    <div className="w-full p-6 my-4 text-sm text-yellow-800 rounded-xl bg-yellow-50 dark:bg-slate-900 dark:text-yellow-300 border border-yellow-200 dark:border-yellow-800 shadow-sm" role="alert">
+        <h2 className="font-bold text-lg mb-2">Missing API Key</h2>
+        <p>The AI service requires a Gemini API key. Please ensure GEMINI_API_KEY is set in your environment variables.</p>
     </div>
 );
 
 const ApiKeyInvalidBanner = () => (
-    <div className="w-full p-4 my-4 text-sm text-red-800 rounded-lg bg-red-100 dark:bg-slate-900 dark:text-red-300 border border-red-200 dark:border-red-800" role="alert">
-        <h2 className="font-bold mb-2">Configuration Error: API Key is Invalid</h2>
-        <p>
-            The application failed to connect to the AI service. The provided API key is invalid, has been leaked, or lacks the necessary permissions.
-        </p>
-        <p className="mt-2">
-            <strong>To fix this:</strong> Please generate a new key from Google AI Studio. Then, go to your project's settings on Render, navigate to the "Environment" section, and update the environment variable with the key <code className="font-mono bg-red-200 dark:bg-slate-700 p-1 rounded">GEMINI_API_KEY</code> to your new API key value. The deployment will automatically restart.
-        </p>
+    <div className="w-full p-6 my-4 text-sm text-red-800 rounded-xl bg-red-50 dark:bg-slate-900 dark:text-red-300 border border-red-200 dark:border-red-800 shadow-sm" role="alert">
+        <h2 className="font-bold text-lg mb-2">Invalid API Key</h2>
+        <p>The provided API key is invalid or lacks permissions. Please check your Google AI Studio dashboard for a valid key.</p>
     </div>
 );
-
 
 export default function App() {
   const [appState, setAppState] = useState<AppState>(AppState.AWAITING_UPLOAD);
@@ -56,36 +46,28 @@ export default function App() {
     if (!process.env.API_KEY) {
         setApiKeyStatus('MISSING');
     }
-    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-    const savedTheme = localStorage.getItem('theme');
+    // Fix: Use window object with any assertion to access global DOM APIs like localStorage and matchMedia.
+    const savedTheme = (window as any).localStorage.getItem('theme');
+    const prefersDark = (window as any).matchMedia('(prefers-color-scheme: dark)').matches;
     if (savedTheme === 'dark' || (!savedTheme && prefersDark)) {
       setIsDarkMode(true);
-      document.documentElement.classList.add('dark');
-    } else {
-      setIsDarkMode(false);
-      document.documentElement.classList.remove('dark');
+      (window as any).document.documentElement.classList.add('dark');
     }
   }, []);
 
   const handleToggleTheme = () => {
     setIsDarkMode(prev => {
       const newIsDark = !prev;
-      if (newIsDark) {
-        document.documentElement.classList.add('dark');
-        localStorage.setItem('theme', 'dark');
-      } else {
-        document.documentElement.classList.remove('dark');
-        localStorage.setItem('theme', 'light');
-      }
+      // Fix: Use window.document to access the document object and apply the dark class.
+      (window as any).document.documentElement.classList.toggle('dark', newIsDark);
+      (window as any).localStorage.setItem('theme', newIsDark ? 'dark' : 'light');
       return newIsDark;
     });
   };
 
-  const handleError = (errorMessage: string, finishAction = true) => {
+  const handleError = (errorMessage: string, returnToUpload = false) => {
     setError(errorMessage);
-    if(finishAction){
-      setError(prev => `${prev} Finish what you were doing.`);
-    } else {
+    if (returnToUpload) {
        setAppState(AppState.AWAITING_UPLOAD);
        setEssayQuestions([]);
        setSelectedQuestionIndex(null);
@@ -95,7 +77,7 @@ export default function App() {
 
   const handleFileReceived = useCallback(async (file: File) => {
     if (!gradeLevel) {
-      setError("Please select a grade level before uploading a file.");
+      setError("Please select a grade level before uploading.");
       return;
     }
     setError(null);
@@ -119,18 +101,21 @@ export default function App() {
           questionPool = await generateEssayQuestions(text, gradeLevel);
       }
       
+      if (!questionPool || questionPool.length === 0) {
+        throw new Error("No questions could be generated from this document. Try a different file.");
+      }
+
       const shuffledQuestions = [...questionPool].sort(() => 0.5 - Math.random());
       const selectedQuestions = shuffledQuestions.slice(0, Math.min(3, shuffledQuestions.length));
       
       setEssayQuestions(selectedQuestions.map(q => ({ text: q })));
       setAppState(AppState.AWAITING_QUESTION_SELECTION);
     } catch (err: any) {
-      if (err instanceof Error && err.message.startsWith("API_KEY_INVALID")) {
+      if (err.message?.startsWith("API_KEY_INVALID")) {
           setApiKeyStatus('INVALID');
-          setError(null);
           setAppState(AppState.AWAITING_UPLOAD);
       } else {
-          handleError(err.message || 'An unknown error occurred while processing the file.', false);
+          handleError(err.message || 'Error processing document.', true);
       }
     }
   }, [gradeLevel]);
@@ -154,7 +139,6 @@ export default function App() {
           feedback: result
       };
       setHistory(prev => [...prev, newHistoryEntry]);
-
       setFeedback(result);
 
       setEssayQuestions(prevQuestions => {
@@ -170,12 +154,11 @@ export default function App() {
 
       setAppState(AppState.SHOWING_FEEDBACK);
     } catch (err: any) {
-        if (err instanceof Error && err.message.startsWith("API_KEY_INVALID")) {
+        if (err.message?.startsWith("API_KEY_INVALID")) {
             setApiKeyStatus('INVALID');
-            setError(null);
             setAppState(AppState.AWAITING_ANSWER);
         } else {
-            handleError(err.message || 'An unexpected error occurred.', true);
+            handleError(err.message || 'Evaluation failed. Please try again.', false);
             setAppState(AppState.AWAITING_ANSWER);
         }
     }
@@ -192,7 +175,6 @@ export default function App() {
     setFeedback(null);
     setError(null);
     setFileName(null);
-    setHistory([]);
   };
 
   const handleAnswerAnother = () => {
@@ -204,37 +186,36 @@ export default function App() {
   }
   
   const renderContent = () => {
-    if (apiKeyStatus === 'MISSING') {
-        return <ApiKeyMissingBanner />;
-    }
-    if (apiKeyStatus === 'INVALID') {
-        return <ApiKeyInvalidBanner />;
-    }
+    if (apiKeyStatus === 'MISSING') return <ApiKeyMissingBanner />;
+    if (apiKeyStatus === 'INVALID') return <ApiKeyInvalidBanner />;
       
     switch (appState) {
       case AppState.AWAITING_UPLOAD:
         return (
-          <div className="w-full space-y-6">
-            <p className="text-center text-gray-600 dark:text-gray-300 max-w-2xl mx-auto">
-              Begin by selecting your grade level and uploading your study document. We'll then create practice questions from its content to help you prepare.
-            </p>
-            <div className="w-full space-y-4">
+          <div className="w-full space-y-8 animate-fade-in">
+            <div className="text-center space-y-4">
+                <h2 className="text-3xl font-extrabold text-light-text dark:text-white">AI Grade Assistant</h2>
+                <p className="text-gray-600 dark:text-gray-400 max-w-xl mx-auto">
+                  Upload your study materials or an old exam paper. Our AI will challenge you with customized questions and provide instant, detailed feedback.
+                </p>
+            </div>
+            <div className="bg-white dark:bg-slate-800 p-6 rounded-2xl shadow-xl border border-gray-100 dark:border-slate-700 space-y-6">
               <GradeLevelSelector selectedGrade={gradeLevel} onGradeChange={setGradeLevel} disabled={false} />
               <FileUpload onFileSelect={handleFileReceived} disabled={!gradeLevel} />
             </div>
           </div>
         );
       case AppState.PROCESSING_FILE:
-        return <Loader text={`Processing ${fileName}...`} />;
+        return <Loader text={`Analyzing ${fileName}...`} />;
       case AppState.CLASSIFYING_DOCUMENT:
-        return <Loader text="Analyzing document type..." />;
+        return <Loader text="Identifying document context..." />;
       case AppState.GENERATING_QUESTIONS:
-        return <Loader text={documentType === DocumentType.QUESTION_PAPER ? "Extracting questions..." : "Generating exam questions..."} />;
+        return <Loader text="Crafting your exam questions..." />;
       case AppState.AWAITING_QUESTION_SELECTION:
         return <QuestionSelection questions={essayQuestions} onSelectQuestion={handleQuestionSelect} />;
       case AppState.AWAITING_ANSWER:
         return (
-          <div className="w-full space-y-6">
+          <div className="w-full space-y-6 animate-fade-in">
             {selectedQuestionIndex !== null && <QuestionDisplay question={essayQuestions[selectedQuestionIndex].text} />}
             <AnswerInput onSubmit={handleAnswerSubmit} disabled={false} />
           </div>
@@ -244,7 +225,7 @@ export default function App() {
           <div className="w-full space-y-6">
             {selectedQuestionIndex !== null && <QuestionDisplay question={essayQuestions[selectedQuestionIndex].text} />}
             <AnswerInput onSubmit={handleAnswerSubmit} disabled={true} />
-            <Loader text="Evaluating your answer..." />
+            <Loader text="Critiquing your answer with AI precision..." />
           </div>
         );
       case AppState.SHOWING_FEEDBACK:
@@ -255,18 +236,22 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen text-light-text dark:text-dark-text flex flex-col items-center">
+    <div className="min-h-screen bg-gray-50 dark:bg-dark-background text-light-text dark:text-dark-text transition-colors duration-300">
       <Header isDarkMode={isDarkMode} onToggleTheme={handleToggleTheme} />
-      <div className="w-full max-w-3xl mx-auto space-y-6 p-4">
+      <div className="w-full max-w-4xl mx-auto p-4 pb-20">
         <main className="flex flex-col items-center">
             {error && apiKeyStatus === 'VALID' && (
-            <div className="w-full p-4 mb-4 text-sm text-red-800 rounded-lg bg-red-100 dark:bg-slate-900 dark:text-red-300 border border-red-200 dark:border-red-800" role="alert">
-                <span className="font-medium">Error:</span> {error}
-            </div>
+              <div className="w-full p-4 mb-6 text-sm text-red-800 rounded-xl bg-red-100 dark:bg-red-900/20 dark:text-red-300 border border-red-200 dark:border-red-900/30 flex items-center justify-between" role="alert">
+                  <span><span className="font-bold">Error:</span> {error}</span>
+                  <button onClick={() => setError(null)} className="ml-4 font-bold hover:opacity-70">&times;</button>
+              </div>
             )}
-            {renderContent()}
+            
+            <div className="w-full">
+                {renderContent()}
+            </div>
 
-            {history.length > 0 && (appState === AppState.AWAITING_QUESTION_SELECTION || appState === AppState.SHOWING_FEEDBACK) && (
+            {history.length > 0 && (appState === AppState.AWAITING_QUESTION_SELECTION || appState === AppState.SHOWING_FEEDBACK || appState === AppState.AWAITING_UPLOAD) && (
               <HistoryDisplay history={history} />
             )}
         </main>

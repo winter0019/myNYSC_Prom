@@ -1,3 +1,4 @@
+/// <reference lib="dom" />
 import React, { useState } from 'react';
 import type { HistoryEntry } from '../types';
 import { ChevronDownIcon, ExportIcon } from './IconComponents';
@@ -49,12 +50,13 @@ ${entry.feedback.suggestion2}
 
     const blob = new Blob([content], { type: 'text/markdown;charset=utf-8' });
     const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
+    // Fix: Use window.document to access document-level methods and body in environments where document may not be globally recognized.
+    const link = (window as any).document.createElement('a');
     link.href = url;
     link.download = 'MyNYSC-prom-session-history.md';
-    document.body.appendChild(link);
+    (window as any).document.body.appendChild(link);
     link.click();
-    document.body.removeChild(link);
+    (window as any).document.body.removeChild(link);
     URL.revokeObjectURL(url);
   };
 

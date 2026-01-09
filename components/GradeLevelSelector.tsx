@@ -17,7 +17,8 @@ export const GradeLevelSelector: React.FC<GradeLevelSelectorProps> = ({ selected
       <select
         id="grade-level"
         value={selectedGrade}
-        onChange={(e) => onGradeChange(e.target.value)}
+        // Fix: Use type assertion on target to access the value property and resolve missing property error.
+        onChange={(e) => onGradeChange((e.target as any).value)}
         disabled={disabled}
         className="bg-gray-50 border border-gray-300 text-light-text text-sm rounded-lg focus:ring-primary-500 focus:border-primary-500 block w-full p-2.5 dark:bg-slate-800 dark:border-slate-600 dark:placeholder-gray-400 dark:text-white dark:focus:ring-primary-500 dark:focus:border-primary-500 disabled:cursor-not-allowed disabled:opacity-50 transition"
       >
